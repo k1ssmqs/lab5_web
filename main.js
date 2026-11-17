@@ -104,8 +104,10 @@ async function route(req, res, cacheDir) {
     await handleGet(res, code, file);
   } else if (req.method === 'PUT') {
     await handlePut(req, res, file);
+  } else if (req.method === 'DELETE') {
+    await handleDelete(res, file);
   } else {
-    // Поки що DELETE та інші методи не реалізовані.
+    // Поки що інші методи не реалізовані.
     sendText(res, 501, 'Not Implemented');
   }
 }
@@ -145,6 +147,19 @@ async function handlePut(req, res, file) {
   }
   await saveToCache(file, body);
   sendText(res, 201, 'Created');
+}
+
+async function handleDelete(res, file) {
+  try {
+    await fs.unlink(file);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      sendText(res, 404, 'Not Found: такої картинки немає в кеші');
+      return;
+    }
+    throw err;
+  }
+  sendText(res, 200, 'OK');
 }
 
 //запуск
