@@ -1,5 +1,5 @@
-# Команди, якими перевірено сервер (PowerShell, Windows).
-# У PowerShell потрібно писати curl.exe, бо curl є аліасом іншої команди.
+# Команди, якими перевірено сервер (PowerShell)
+# У PowerShell потрібно писати curl.exe, бо curl є аліасом іншої команди
 
 #запуск сервера
 node main.js -h 127.0.0.1 -p 3000 -c ./cache
@@ -8,6 +8,9 @@ node main.js -h 127.0.0.1 -p 3000 -c ./cache
 node main.js
 node main.js -h 127.0.0.1 -p 3000
 node main.js -h 127.0.0.1 -p abc -c ./cache
+
+#очищення теки кешу
+Remove-Item cache\* -Force
 
 #підготовка власної картинки для PUT
 Copy-Item "C:\Users\lumiz\OneDrive\Документи\Зображення\blackcat.jpg" $env:TEMP\mypic.jpg
