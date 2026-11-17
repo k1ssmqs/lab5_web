@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs/promises');
 const { once } = require('events');
 const { randomUUID } = require('crypto');
+const { buffer } = require('stream/consumers');
 const { Command } = require('commander');
 const superagent = require('superagent');
 
@@ -101,8 +102,10 @@ async function route(req, res, cacheDir) {
 
   if (req.method === 'GET') {
     await handleGet(res, code, file);
+  } else if (req.method === 'PUT') {
+    await handlePut(req, res, file);
   } else {
-    //поки що інші методи не реалізовані
+    // Поки що DELETE та інші методи не реалізовані.
     sendText(res, 501, 'Not Implemented');
   }
 }
@@ -132,6 +135,16 @@ async function handleGet(res, code, file) {
   // 3) зберігаємо в кеш і віддаємо клієнтові
   await saveToCache(file, image);
   sendImage(res, image, 'MISS');
+}
+
+async function handlePut(req, res, file) {
+  const body = await buffer(req); // тіло запиту цілком, як Buffer
+  if (body.length === 0) {
+    sendText(res, 400, 'Bad Request: тіло запиту порожнє, очікується картинка');
+    return;
+  }
+  await saveToCache(file, body);
+  sendText(res, 201, 'Created');
 }
 
 //запуск
