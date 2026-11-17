@@ -88,7 +88,13 @@ function createHandler(cacheDir) {
 async function route(req, res, cacheDir) {
   console.log(`${req.method} ${req.url}`);
 
-  //код стану беремо тільки зі шляху формату /ТРИ_ЦИФРИ, Інші шляхи
+  //дозволені лише три методи, решта дає 405 із заголовком Allow
+  if (!['GET', 'PUT', 'DELETE'].includes(req.method)) {
+    sendText(res, 405, 'Method Not Allowed', { Allow: 'GET, PUT, DELETE' });
+    return;
+  }
+
+  //код стану беремо тільки зі шляху формату /ТРИ_ЦИФРИ, інші шляхи
   //відхиляємо, тому ім'я файлу в кеші не може вийти за межі теки
   const { pathname } = new URL(req.url, 'http://localhost');
   const match = /^\/(\d{3})$/.exec(pathname);
@@ -104,11 +110,8 @@ async function route(req, res, cacheDir) {
     await handleGet(res, code, file);
   } else if (req.method === 'PUT') {
     await handlePut(req, res, file);
-  } else if (req.method === 'DELETE') {
-    await handleDelete(res, file);
   } else {
-    // Поки що інші методи не реалізовані.
-    sendText(res, 501, 'Not Implemented');
+    await handleDelete(res, file);
   }
 }
 
