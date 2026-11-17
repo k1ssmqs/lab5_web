@@ -1,0 +1,48 @@
+# Команди, якими перевірено сервер (PowerShell, Windows).
+# У PowerShell потрібно писати curl.exe, бо curl є аліасом іншої команди.
+
+#запуск сервера
+node main.js -h 127.0.0.1 -p 3000 -c ./cache
+
+#перевірка обов'язкових опцій (кожна дає помилку й код завершення 1)
+node main.js
+node main.js -h 127.0.0.1 -p 3000
+node main.js -h 127.0.0.1 -p abc -c ./cache
+
+#підготовка власної картинки для PUT
+Copy-Item "C:\Users\lumiz\OneDrive\Документи\Зображення\blackcat.jpg" $env:TEMP\mypic.jpg
+
+# GET
+#перший запит: картинки немає в кеші, береться з http.cat (X-Cache: MISS)
+curl.exe -s -D - -o $env:TEMP\cat200.jpg http://127.0.0.1:3000/200
+#повторний запит: віддається з кешу (X-Cache: HIT)
+curl.exe -s -D - -o $env:TEMP\cat200.jpg http://127.0.0.1:3000/200
+#неіснуючий код: 404
+curl.exe -i http://127.0.0.1:3000/999
+#некоректний шлях: 400
+curl.exe -i http://127.0.0.1:3000/abc
+
+# PUT
+#запис власної картинки в кеш: 201
+curl.exe -i -X PUT --data-binary "@$env:TEMP\mypic.jpg" http://127.0.0.1:3000/200
+#файл у кеші збережено без змін (хеші збігаються)
+(Get-FileHash $env:TEMP\mypic.jpg).Hash
+(Get-FileHash cache\200.jpg).Hash
+#GET після PUT: віддається завантажена картинка (X-Cache: HIT, розмір власного файлу)
+curl.exe -s -D - -o $env:TEMP\after.jpg http://127.0.0.1:3000/200
+(Get-Item $env:TEMP\mypic.jpg).Length
+#порожнє тіло: 400
+curl.exe -i -X PUT http://127.0.0.1:3000/201
+
+# DELETE 
+#видалення з кешу: 200
+curl.exe -i -X DELETE http://127.0.0.1:3000/200
+#повторне видалення: 404
+curl.exe -i -X DELETE http://127.0.0.1:3000/200
+#GET після DELETE: картинка знову береться з http.cat (X-Cache: MISS)
+curl.exe -s -D - -o $env:TEMP\again.jpg http://127.0.0.1:3000/200
+
+#недозволені методи: 405 із заголовком Allow
+curl.exe -i -X POST http://127.0.0.1:3000/200
+curl.exe -i -X PATCH http://127.0.0.1:3000/200
+curl.exe -I http://127.0.0.1:3000/200
