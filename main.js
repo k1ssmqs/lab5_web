@@ -4,7 +4,12 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs/promises');
 const { once } = require('events');
+const { randomUUID } = require('crypto');
 const { Command } = require('commander');
+const superagent = require('superagent');
+
+//джерело картинок, якщо його треба змінити, правимо тільки цей рядок
+const SOURCE_URL = 'https://http.cat';
 
 //параметри командного рядка 
 const program = new Command();
@@ -18,7 +23,7 @@ program
 
 program.parse();
 
-//допоміжні функції 
+//допоміжні функції
 //відповідь із текстовим повідомленням (для помилок і підтверджень)
 function sendText(res, status, message, headers = {}) {
   res.writeHead(status, {
@@ -28,7 +33,41 @@ function sendText(res, status, message, headers = {}) {
   res.end(`${status} ${message}\n`);
 }
 
-//обробка запитів
+//відповідь із картинкою; source показує, звідки вона взята: HIT або MISS
+function sendImage(res, image, source) {
+  res.writeHead(200, {
+    'Content-Type': 'image/jpeg',
+    'Content-Length': image.length,
+    'X-Cache': source,
+  });
+  res.end(image);
+}
+
+//запис у кеш через тимчасовий файл і rename, щоб файл ніколи
+//не лишався напівзаписаним (наприклад, при двох одночасних запитах)
+async function saveToCache(file, data) {
+  const tmp = `${file}.${randomUUID()}.tmp`; // унікальне ім'я для кожного запису
+  try {
+    await fs.writeFile(tmp, data);
+    await fs.rename(tmp, file);
+  } catch (err) {
+    await fs.rm(tmp, { force: true });
+    throw err;
+  }
+}
+
+//запит картинки з http.cat. Повертає Buffer або кидає помилку
+async function fetchFromSource(code) {
+  const response = await superagent
+    .get(`${SOURCE_URL}/${code}`)
+    .timeout(10000)
+    .buffer(true)
+    .parse(superagent.parse.image);
+  return response.body;
+}
+
+//обробка запитів 
+
 function createHandler(cacheDir) {
   return async function handler(req, res) {
     try {
@@ -47,12 +86,55 @@ function createHandler(cacheDir) {
 
 async function route(req, res, cacheDir) {
   console.log(`${req.method} ${req.url}`);
-  //поки що жоден метод не реалізований
-  sendText(res, 501, 'Not Implemented');
+
+  //код стану беремо тільки зі шляху формату /ТРИ_ЦИФРИ, Інші шляхи
+  //відхиляємо, тому ім'я файлу в кеші не може вийти за межі теки
+  const { pathname } = new URL(req.url, 'http://localhost');
+  const match = /^\/(\d{3})$/.exec(pathname);
+  if (match === null) {
+    sendText(res, 400, 'Bad Request: шлях має бути у вигляді /<код стану>, наприклад /200');
+    return;
+  }
+
+  const code = match[1];
+  const file = path.join(cacheDir, `${code}.jpg`);
+
+  if (req.method === 'GET') {
+    await handleGet(res, code, file);
+  } else {
+    //поки що інші методи не реалізовані
+    sendText(res, 501, 'Not Implemented');
+  }
+}
+
+async function handleGet(res, code, file) {
+  // 1) пробуємо кеш
+  try {
+    const cached = await fs.readFile(file);
+    sendImage(res, cached, 'HIT');
+    return;
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      throw err; //це не «файлу немає», а справжня помилка диска
+    }
+  }
+
+  // 2) у кеші немає: просимо в http.cat
+  let image;
+  try {
+    image = await fetchFromSource(code);
+  } catch (err) {
+    const reason = err.status ? `http.cat відповів ${err.status}` : err.message;
+    sendText(res, 404, `Not Found: картинки немає в кеші, а отримати її з http.cat не вдалося (${reason})`);
+    return;
+  }
+
+  // 3) зберігаємо в кеш і віддаємо клієнтові
+  await saveToCache(file, image);
+  sendImage(res, image, 'MISS');
 }
 
 //запуск
-
 async function main() {
   try {
     const { host, port: portText, cache } = program.opts();
@@ -70,7 +152,7 @@ async function main() {
     const server = http.createServer(createHandler(cacheDir));
 
     server.listen(port, host);
-    await once(server, 'listening'); // проміс замість колбека listen()
+    await once(server, 'listening'); //проміс замість колбека listen()
 
     console.log(`Проксі працює на http://${host}:${server.address().port}, кеш: ${cacheDir}`);
   } catch (err) {
